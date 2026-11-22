@@ -60,6 +60,9 @@ reqwest = { git = "https://github.com/rustdesk-org/reqwest", features = ["blocki
 
 [target.'cfg(not(any(target_os = "macos", target_os = "windows")))'.dependencies]
 reqwest = { git = "https://github.com/rustdesk-org/reqwest", features = ["blocking", "socks", "json", "rustls-tls", "rustls-tls-native-roots", "gzip"], default-features=false }
+# hbb_common enables native-tls on tokio-tungstenite, so linux builds need OpenSSL;
+# vendor it so the musl CI image does not have to ship a static libssl.
+openssl = { version = "0.10", features = ["vendored"] }
 
 [build-dependencies]
 hbb_common = { path = "libs/hbb_common" }
