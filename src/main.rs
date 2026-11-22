@@ -23,7 +23,11 @@ fn main() -> ResultType<()> {
         -r, --relay-servers=[HOST] 'Sets the default relay servers, separated by comma'
         -M, --rmem=[NUMBER(default={RMEM})] 'Sets UDP recv buffer size, set system rmem_max first, e.g., sudo sysctl -w net.core.rmem_max=52428800. vi /etc/sysctl.conf, net.core.rmem_max=52428800, sudo sysctl –p'
         , --mask=[MASK] '[DEPRECATED] Determine if the connection comes from LAN, e.g. 192.168.0.0/16'
-        -k, --key=[KEY] 'Only allow the client with the same key'",
+        -k, --key=[KEY] 'Only allow the client with the same key'
+        --must-login=[MODE] 'Require a client login before punch hole: off|api|local (default: off)'
+        --api-server=[URL] 'API server used by must-login=api (default: http://127.0.0.1:31114)'
+        --api-verify-secret=[SECRET] 'Shared secret for /api/server/verify-token'
+        --api-jwt-key=[KEY] 'HS256 key for must-login=local (default: env RUSTDESK_API_JWT_KEY)'",
     );
     init_args(&args, "hbbs", "RustDesk ID/Rendezvous Server");
     let port = get_arg_or("port", RENDEZVOUS_PORT.to_string()).parse::<i32>()?;

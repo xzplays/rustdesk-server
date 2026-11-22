@@ -1,5 +1,6 @@
 use crate::common::*;
 use crate::peer::*;
+use crate::server_verify::MustLoginMode;
 use hbb_common::{
     allow_err, bail,
     bytes::{Bytes, BytesMut},
@@ -135,6 +136,10 @@ struct Inner {
     software_url: String,
     mask: Option<Ipv4Network>,
     local_ip: String,
+    must_login: MustLoginMode,
+    api_server: String,
+    api_secret: String,
+    api_jwt_key: String,
     sk: Option<sign::SecretKey>,
 }
 
@@ -194,6 +199,17 @@ impl RendezvousServer {
                     .unwrap_or_default(),
             )
         };
+        let must_login = MustLoginMode::from_arg(&get_arg("must-login"));
+        let api_server = get_arg_or("api-server", "http://127.0.0.1:31114".to_owned());
+        let api_secret = get_arg("api-verify-secret");
+        let api_jwt_key = {
+            let key = get_arg("api-jwt-key");
+            if key.is_empty() {
+                std::env::var("RUSTDESK_API_JWT_KEY").unwrap_or_default()
+            } else {
+                key
+            }
+        };
         let mut rs = Self {
             tcp_punch: Arc::new(Mutex::new(HashMap::new())),
             pm,
@@ -208,10 +224,18 @@ impl RendezvousServer {
                 sk,
                 mask,
                 local_ip,
+                must_login,
+                api_server,
+                api_secret,
+                api_jwt_key,
             }),
         };
         log::info!("mask: {:?}", rs.inner.mask);
         log::info!("local-ip: {:?}", rs.inner.local_ip);
+        log::info!("MUST_LOGIN={}", rs.inner.must_login.as_str());
+        if rs.inner.must_login == MustLoginMode::Api {
+            log::info!("MUST_LOGIN api-server: {}", rs.inner.api_server);
+        }
         std::env::set_var("PORT_FOR_API", port.to_string());
         rs.parse_relay_servers(&get_arg("relay-servers"));
         let mut listener = create_tcp_listener(bind_addr, port).await?;
@@ -790,6 +814,33 @@ impl RendezvousServer {
                 ..Default::default()
             });
             return Ok((msg_out, None));
+        }
+        if self.inner.must_login.enabled() {
+            let result = match self.inner.must_login {
+                MustLoginMode::Api => {
+                    crate::server_verify::verify_by_api(
+                        &self.inner.api_server,
+                        &self.inner.api_secret,
+                        &ph.token,
+                        &ph.id,
+                        &try_into_v4(addr).ip().to_string(),
+                    )
+                    .await
+                }
+                MustLoginMode::Local => {
+                    crate::server_verify::verify_by_jwt(&self.inner.api_jwt_key, &ph.token)
+                }
+                MustLoginMode::Off => Ok(()),
+            };
+            if let Err(reason) = result {
+                log::warn!("MUST_LOGIN rejected {:?} from {}: {}", ph.id, addr, reason);
+                let mut msg_out = RendezvousMessage::new();
+                msg_out.set_punch_hole_response(PunchHoleResponse {
+                    other_failure: format!("Login required: {reason}"),
+                    ..Default::default()
+                });
+                return Ok((msg_out, None));
+            }
         }
         let id = ph.id;
         // punch hole request from A, relay to B,
